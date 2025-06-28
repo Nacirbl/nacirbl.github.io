@@ -2158,11 +2158,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="logo-icon">UT</div>
             <div class="logo-text">
               <div class="logo-main">University of Twente</div>
-              <div class="logo-sub">Assignment Assistant</div>
+              <div class="logo-sub">Assignment Formatting Assistant</div>
             </div>
           </div>
-          <h2 class="animate-text">Welcome to Assignment Assistant</h2>
-          <p>Create and manage student assignments with our modern, intuitive platform</p>
+          <h2 class="animate-text">Welcome to Assignment Formatting Assistant</h2>
+          <p>Create and manage student assignments formatting using this simple interface</p>
           <a href="?builder=true" class="btn btn-primary hover-lift" style="margin-top: 2rem;">
             ${createIcon('builder')} Create New Assignment
           </a>
