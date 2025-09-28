@@ -9,16 +9,16 @@
 
 /* Variables */
 :root {
-  /* Clean Monochrome with State Colors */
-  --primary: #000000;       /* Pure Black */
-  --primary-light: #333333; /* Dark Gray */
-  --primary-dark: #000000;  /* Pure Black */
+  /* University of Twente Blue Theme */
+  --primary: #0066CC;       /* UT Blue */
+  --primary-light: #3385D6; /* Light UT Blue */
+  --primary-dark: #004C99;  /* Dark UT Blue */
   --secondary: #FFFFFF;     /* Pure White */
-  --secondary-light: #FAFAFA; /* Near White */
-  --secondary-dark: #F5F5F5;  /* Light Gray */
-  --accent: #2196F3;        /* Blue - Info/Primary Actions */
-  --accent-light: #64B5F6;  /* Light Blue */
-  --accent-dark: #1976D2;   /* Dark Blue */
+  --secondary-light: #F8FAFB; /* Near White */
+  --secondary-dark: #E8EEF4;  /* Light Blue Gray */
+  --accent: #0066CC;        /* UT Blue */
+  --accent-light: #4D94FF;  /* Bright Blue */
+  --accent-dark: #003D7A;   /* Deep Blue */
   
   /* Neutral Colors */
   --gray-50: #F8FAFC;
@@ -64,11 +64,11 @@
   
   /* Base */
   --bg: #FFFFFF;
-  --bg-gradient: linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%);
+  --bg-gradient: linear-gradient(180deg, #F8FAFB 0%, #FFFFFF 100%);
   --surface: #FFFFFF;
-  --text: #000000;
-  --text-secondary: #666666;
-  --border: #E5E5E5;
+  --text: #1a1a1a;
+  --text-secondary: #5a6c7d;
+  --border: #D5DDE5;
   
   /* Spacing */
   --space-xs: 0.25rem;
@@ -80,9 +80,9 @@
   --space-3xl: 4rem;
   
   /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Playfair Display', Georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+  --font-sans: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Merriweather', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
   
   /* Border Radius */
   --radius-sm: 0.375rem;
@@ -106,7 +106,7 @@
 }
 
 /* Import Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Source+Sans+Pro:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* Base Styles */
 html {
@@ -119,7 +119,7 @@ body {
   font-size: 1rem;
   line-height: 1.6;
   color: var(--text);
-  background: var(--bg-gradient);
+  background: #F8FAFB;
   min-height: 100vh;
   position: relative;
   -webkit-font-smoothing: antialiased;
@@ -127,7 +127,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Animated Background - Minimal */
+/* Subtle Blue Gradient Background */
 body::before {
   content: '';
   position: fixed;
@@ -136,10 +136,8 @@ body::before {
   right: 0;
   bottom: 0;
   background: 
-    radial-gradient(circle at 20% 80%, rgba(33, 150, 243, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(76, 175, 80, 0.03) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(0, 0, 0, 0.02) 0%, transparent 50%);
-  animation: gradientShift 60s ease infinite;
+    radial-gradient(circle at 30% 20%, rgba(0, 102, 204, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 70% 80%, rgba(0, 102, 204, 0.02) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -197,14 +195,15 @@ p {
   }
 }
 
-/* Header - Clean Monochrome */
+/* Header - UT Blue */
 .hero-section {
   position: relative;
-  background: var(--primary);
+  background: linear-gradient(135deg, #0066CC 0%, #004C99 100%);
   color: white;
-  padding: var(--space-3xl) 0;
+  padding: 2.5rem 0;
   overflow: hidden;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
+  box-shadow: 0 2px 10px rgba(0, 102, 204, 0.2);
 }
 
 .hero-section::before {
@@ -253,17 +252,16 @@ p {
   width: 60px;
   height: 60px;
   background: white;
-  color: var(--primary);
-  border-radius: 12px;
+  color: #0066CC;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
   font-size: 1.75rem;
   letter-spacing: -2px;
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.2);
-  transform: rotate(-5deg);
-  transition: transform var(--transition-spring);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform var(--transition-base);
 }
 
 .logo-mark:hover {
@@ -275,12 +273,12 @@ p {
 }
 
 .logo-title {
-  font-family: var(--font-serif);
-  font-size: 2.25rem;
-  font-weight: 900;
+  font-family: var(--font-sans);
+  font-size: 2rem;
+  font-weight: 700;
   line-height: 1.1;
-  letter-spacing: -1px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+  letter-spacing: -0.5px;
+  text-shadow: none;
 }
 
 .subtitle {
@@ -295,16 +293,14 @@ p {
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
-  margin-top: var(--space-lg);
-  padding: var(--space-sm) var(--space-lg);
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-top: var(--space-md);
+  padding: 0.375rem 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: #0066CC;
   border-radius: var(--radius-full);
   font-size: 0.875rem;
-  font-weight: 500;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: all var(--transition-base);
 }
 
@@ -381,7 +377,7 @@ p {
 
 .nav-item:hover {
   color: var(--primary);
-  background: rgba(33, 150, 243, 0.08);
+  background: rgba(0, 102, 204, 0.08);
   transform: translateX(4px);
 }
 
@@ -391,7 +387,7 @@ p {
 
 .nav-item.active {
   color: var(--primary);
-  background: rgba(33, 150, 243, 0.12);
+  background: rgba(0, 102, 204, 0.12);
   font-weight: 500;
 }
 
@@ -419,7 +415,7 @@ p {
   left: 0;
   right: 0;
   height: 3px;
-  background: var(--blue);
+  background: var(--primary);
   transform: scaleX(0);
   transform-origin: left;
   transition: transform var(--transition-base);
@@ -476,7 +472,7 @@ p {
   left: 0;
   width: 40px;
   height: 2px;
-  background: var(--blue);
+  background: var(--primary);
   border-radius: var(--radius-full);
 }
 
@@ -526,8 +522,8 @@ input[type="number"]:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
 }
 
 textarea {
@@ -558,7 +554,7 @@ textarea {
 }
 
 .section-card:hover {
-  border-color: var(--blue);
+  border-color: var(--primary-light);
   transform: translateX(4px);
 }
 
@@ -572,7 +568,7 @@ textarea {
   border: none;
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--blue-dark);
+  color: var(--primary-dark);
   padding: 0;
   margin-bottom: var(--space-sm);
 }
@@ -585,7 +581,7 @@ textarea {
 .section-content {
   margin-top: var(--space-lg);
   padding-left: var(--space-lg);
-  border-left: 3px solid rgba(33, 150, 243, 0.2);
+  border-left: 3px solid rgba(0, 102, 204, 0.2);
 }
 
 /* Questions - Card Hover Effects */
@@ -611,6 +607,7 @@ textarea {
   background: linear-gradient(135deg, transparent 0%, rgba(232, 213, 196, 0.08) 100%);
   opacity: 0;
   transition: opacity var(--transition-base);
+  pointer-events: none; /* Fix: Allow clicks to pass through */
 }
 
 .question-card:hover {
@@ -692,6 +689,8 @@ textarea {
 .question-actions {
   display: flex;
   gap: var(--space-sm);
+  position: relative;
+  z-index: 20; /* Ensure buttons are above other elements */
 }
 
 /* Buttons - Modern with Micro-interactions */
@@ -713,6 +712,10 @@ textarea {
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  /* Default blue styling */
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
 }
 
 .btn::before {
@@ -726,11 +729,18 @@ textarea {
   background: rgba(255, 255, 255, 0.3);
   transform: translate(-50%, -50%);
   transition: width 0.6s, height 0.6s;
+  pointer-events: none; /* Fix: Allow clicks to pass through */
 }
 
 .btn:hover::before {
   width: 300px;
   height: 300px;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.4);
+  background: var(--green);
 }
 
 .btn:active {
@@ -745,7 +755,7 @@ textarea {
   width: 56px;
   height: 56px;
   border-radius: var(--radius-full);
-  background: var(--blue);
+  background: var(--primary);
   color: white;
   display: flex;
   align-items: center;
@@ -758,8 +768,8 @@ textarea {
 
 .fab:hover {
   transform: translateY(-4px) rotate(90deg);
-  box-shadow: 0 12px 24px rgba(33, 150, 243, 0.4);
-  background: var(--blue-dark);
+  box-shadow: 0 12px 24px rgba(76, 175, 80, 0.4);
+  background: var(--green);
 }
 
 .fab svg {
@@ -773,52 +783,54 @@ textarea {
 }
 
 .btn-primary {
-  background: var(--blue);
+  background: var(--primary);
   color: white;
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(33, 150, 243, 0.4);
-  background: var(--blue-dark);
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.4);
+  background: var(--green);
 }
 
 .btn-secondary {
-  background: var(--surface);
-  color: var(--text);
+  background: var(--primary);
+  color: white;
   border: 2px solid var(--primary);
   box-shadow: var(--shadow-sm);
 }
 
 .btn-secondary:hover {
-  background: var(--primary);
+  background: var(--green);
   color: white;
+  border-color: var(--green);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.4);
 }
 
 .btn-success {
-  background: var(--green);
+  background: var(--primary);
   color: white;
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
 }
 
 .btn-success:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(76, 175, 80, 0.4);
-  background: var(--green-dark);
+  background: var(--green);
 }
 
 .btn-warning {
-  background: linear-gradient(135deg, var(--warning) 0%, var(--warning-light) 100%);
+  background: var(--primary);
   color: white;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
 }
 
 .btn-warning:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.4);
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.4);
+  background: var(--green);
 }
 
 .btn-danger {
@@ -847,9 +859,9 @@ textarea {
 }
 
 .btn-icon:hover {
-  background-color: var(--secondary-dark);
-  color: var(--text);
-  border-color: var(--primary);
+  background-color: var(--green);
+  color: white;
+  border-color: var(--green);
 }
 
 .btn-icon.delete:hover {
@@ -884,9 +896,9 @@ textarea {
 }
 
 .ql-toolbar {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7)) !important;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9)) !important;
   border: none !important;
-  border-bottom: 1px solid rgba(30, 58, 138, 0.1) !important;
+  border-bottom: 2px solid var(--primary-light) !important;
   padding: var(--space-md) !important;
   backdrop-filter: blur(8px);
 }
@@ -900,6 +912,12 @@ textarea {
   padding: var(--space-md) !important;
   font-size: 1rem;
   line-height: 1.6;
+  transition: background-color var(--transition-fast);
+}
+
+.ql-editor.drag-over {
+  background-color: rgba(0, 102, 204, 0.05);
+  border: 2px dashed var(--primary);
 }
 
 /* Quill Font Styles */
@@ -958,7 +976,7 @@ input[type="checkbox"] {
   width: 1.25rem;
   height: 1.25rem;
   cursor: pointer;
-  accent-color: var(--blue);
+  accent-color: var(--primary);
   flex-shrink: 0;
 }
 
@@ -1105,7 +1123,8 @@ input[type="checkbox"] {
 }
 
 .copy-btn:hover {
-  background: var(--primary-light);
+  background: var(--green);
+  color: white;
   transform: translateY(-2px);
 }
 
@@ -1195,7 +1214,7 @@ input[type="checkbox"] {
 .logo-icon {
   width: 64px;
   height: 64px;
-  background: var(--blue);
+  background: var(--primary);
   color: white;
   border-radius: 12px;
   display: flex;
@@ -1204,7 +1223,7 @@ input[type="checkbox"] {
   font-weight: 800;
   font-size: 1.75rem;
   letter-spacing: -1px;
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
 }
 
 .logo-text {
@@ -1304,7 +1323,7 @@ input[type="checkbox"] {
 .table-modal h3,
 #image-resize-modal h3 {
   margin-bottom: var(--space-lg);
-  color: var(--blue-dark);
+  color: var(--primary-dark);
 }
 
 .table-modal-inputs {
@@ -1345,8 +1364,8 @@ input[type="checkbox"] {
 }
 
 .file-label:hover {
-  background-color: rgba(33, 150, 243, 0.05);
-  border-color: var(--blue);
+  background-color: rgba(0, 102, 204, 0.05);
+  border-color: var(--primary);
 }
 
 input[type="file"] {
@@ -1360,15 +1379,6 @@ input[type="file"] {
   font-style: italic;
 }
 
-/* PDF Content */
-.pdf-content {
-  position: absolute;
-  left: -9999px;
-  top: -9999px;
-  width: 794px;
-  padding: 40px;
-  background: white;
-}
 
 /* Student View */
 .section-header-card {
@@ -1388,14 +1398,47 @@ input[type="file"] {
   color: var(--text-secondary);
 }
 
-.question-description {
+.question-description,
+.section-description {
   background-color: var(--secondary-light);
-  border-left: 3px solid var(--blue-light);
+  border-left: 3px solid var(--primary-light);
   padding: var(--space-md);
   margin-bottom: var(--space-md);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   font-size: 0.9375rem;
   color: var(--text-secondary);
+}
+
+.question-description img,
+.section-description img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: var(--space-md) auto;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.question-description p,
+.section-description p {
+  margin-bottom: var(--space-sm);
+}
+
+.description-editor-container {
+  margin-bottom: var(--space-md);
+}
+
+.description-editor-container .ql-toolbar {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid var(--border) !important;
+  border-bottom: none !important;
+  border-radius: var(--radius-md) var(--radius-md) 0 0 !important;
+}
+
+.description-editor-container .ql-container {
+  border: 1px solid var(--border) !important;
+  border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
+  background: white;
 }
 
 /* Question Options */
@@ -1422,12 +1465,12 @@ input[type="file"] {
 
 /* Footer */
 .footer {
-  background-color: var(--secondary-dark);
-  border-top: 1px solid var(--border);
+  background-color: #F8FAFC;
+  border-top: 2px solid var(--primary);
   padding: var(--space-xl) 0;
   text-align: center;
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: var(--primary);
 }
 
 /* Utility Classes - Asymmetric Grid */
@@ -1552,14 +1595,14 @@ input[type="file"] {
   flex-direction: column;
   gap: var(--space-xs);
   padding: var(--space-md);
-  background: rgba(33, 150, 243, 0.08);
+  background: rgba(0, 102, 204, 0.08);
   border-radius: var(--radius-md);
-  border-left: 3px solid var(--blue);
+  border-left: 3px solid var(--primary);
   transition: all var(--transition-fast);
 }
 
 .stat-item:hover {
-  background: rgba(33, 150, 243, 0.15);
+  background: rgba(0, 102, 204, 0.15);
   transform: translateX(4px);
 }
 
@@ -1584,7 +1627,7 @@ input[type="file"] {
 }
 
 .drag-over {
-  background-color: rgba(33, 150, 243, 0.1);
+  background-color: rgba(0, 102, 204, 0.1);
 }
 
 /* Prevent text selection during drag */

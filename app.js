@@ -12,15 +12,201 @@ let createQuestionBlock = null;
 
 // Utility functions
 function encodeFormData(data) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  try {
+    return btoa(encodeURIComponent(JSON.stringify(data)));
+  } catch (error) {
+    console.error('Error encoding form data:', error);
+    return null;
+  }
 }
 
 function decodeFormData(encoded) {
   try {
-    return JSON.parse(decodeURIComponent(escape(atob(encoded))));
-  } catch {
+    return JSON.parse(decodeURIComponent(atob(encoded)));
+  } catch (error) {
+    console.error('Error decoding form data:', error);
     return null;
   }
+}
+
+// Image hosting configuration
+const IMAGE_HOSTING = {
+  // Free imgur API - no account needed for anonymous uploads
+  imgur: {
+    clientId: '546c25a59c58ad7', // Public client ID for anonymous uploads
+    endpoint: 'https://api.imgur.com/3/image'
+  },
+  // You can add other services here
+  enabled: true
+};
+
+// Upload image to hosting service and return URL
+async function uploadImageToHost(file) {
+  if (!IMAGE_HOSTING.enabled) {
+    console.log('Image hosting disabled, falling back to base64');
+    return await toBase64(file);
+  }
+  
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    
+    const response = await fetch(IMAGE_HOSTING.imgur.endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Client-ID ${IMAGE_HOSTING.imgur.clientId}`
+      },
+      body: formData
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (data.success && data.data?.link) {
+      console.log('Image uploaded successfully:', data.data.link);
+      return data.data.link;
+    } else {
+      throw new Error('Invalid response from image host');
+    }
+    
+  } catch (error) {
+    console.error('Image upload failed, falling back to base64:', error);
+    // Fallback to base64 compression if upload fails
+    const base64 = await toBase64(file);
+    return await compressImage(base64, 600, 0.7);
+  }
+}
+
+// Compress image to reduce URL size (kept as fallback)
+async function compressImage(dataUrl, maxWidth = 800, quality = 0.8) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Calculate new dimensions while maintaining aspect ratio
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Draw and compress
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Convert to JPEG with compression for better size reduction
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressedDataUrl);
+    };
+    img.onerror = () => resolve(dataUrl); // Return original if compression fails
+    img.src = dataUrl;
+  });
+}
+
+// Convert image URL to base64 with compression
+async function imageUrlToBase64(url) {
+  try {
+    // Try direct fetch first
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    
+    // Compress the image before returning
+    return await compressImage(dataUrl);
+  } catch (error) {
+    // If direct fetch fails (likely CORS), try using an image element
+    console.warn('Direct fetch failed, trying alternative method:', error);
+    try {
+      const dataUrl = await convertImageViaCanvas(url);
+      return await compressImage(dataUrl);
+    } catch (canvasError) {
+      console.error('Error converting image to base64:', canvasError);
+      return url; // Return original URL if conversion fails
+    }
+  }
+}
+
+// Alternative method using canvas for CORS-restricted images
+async function convertImageViaCanvas(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // Try to enable CORS
+    
+    img.onload = function() {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        
+        const dataURL = canvas.toDataURL();
+        resolve(dataURL);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    img.onerror = function() {
+      reject(new Error('Failed to load image'));
+    };
+    
+    img.src = url;
+  });
+}
+
+// Process HTML content for assignment sharing
+async function processImagesInHtml(html) {
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  const images = tempDiv.querySelectorAll('img');
+  
+  for (const img of images) {
+    const src = img.getAttribute('src');
+    
+    if (src) {
+      if (src.startsWith('data:image/')) {
+        // Base64 images - compress them to reduce URL size
+        try {
+          const compressed = await compressImage(src);
+          img.setAttribute('src', compressed);
+          console.log('Compressed embedded base64 image');
+        } catch (error) {
+          console.error('Error compressing embedded image:', error);
+        }
+      } else if (src.includes('imgur.com') || src.includes('i.imgur.com')) {
+        // Imgur hosted images - keep as URLs (they're already optimized)
+        console.log('Keeping imgur hosted image as URL:', src);
+        // No processing needed - imgur URLs are stable and work well
+      } else if (src.startsWith('http://') || src.startsWith('https://')) {
+        // Other external URLs - convert to base64 with compression for offline access
+        try {
+          const base64 = await imageUrlToBase64(src);
+          img.setAttribute('src', base64);
+          console.log('Converted external image to compressed base64');
+        } catch (error) {
+          console.error('Error processing external image:', src, error);
+          // Keep original URL if conversion fails
+        }
+      }
+      // Local file URLs or other protocols - leave unchanged
+    }
+  }
+  
+  return tempDiv.innerHTML;
 }
 
 // Add smooth scroll to section
@@ -182,9 +368,18 @@ function updateActiveNavOnScroll() {
 }
 
 // Quill Editor Functions
-function createQuillEditor(container, placeholder = "Type your answer here...") {
+function createQuillEditor(container, placeholder = "Type your answer here...", showHelp = true) {
   const editorDiv = document.createElement('div');
   editorDiv.className = 'quill-editor';
+  
+  // Add help text for images (only for student answer fields)
+  if (showHelp && placeholder.includes("answer")) {
+    const helpText = document.createElement('div');
+    helpText.style.cssText = 'font-size: 0.8rem; color: #666; margin-bottom: 8px; font-style: italic;';
+    helpText.innerHTML = '💡 Tip: You can add images by clicking the image button, dragging & dropping, or pasting from clipboard';
+    container.appendChild(helpText);
+  }
+  
   container.appendChild(editorDiv);
 
   const toolbarOptions = [
@@ -213,31 +408,95 @@ function createQuillEditor(container, placeholder = "Type your answer here...") 
             showTableModal();
           },
           'image': function() {
-            const input = document.createElement('input');
-            input.setAttribute('type', 'file');
-            input.setAttribute('accept', 'image/*');
-            input.click();
+            // Show options dialog
+            const choice = confirm('Choose image source:\n\nOK = Upload from computer\nCancel = Enter image URL');
             
-            input.onchange = async () => {
-              const file = input.files[0];
-              if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                  const range = this.quill.getSelection();
-                  this.quill.insertEmbed(range.index, 'image', e.target.result);
+            if (choice) {
+              // File upload
+              const input = document.createElement('input');
+              input.setAttribute('type', 'file');
+              input.setAttribute('accept', 'image/*');
+              input.click();
+              
+              input.onchange = async () => {
+                const file = input.files[0];
+                if (file) {
+                  // Check file size (increased limit since we're using hosting service)
+                  if (file.size > 20 * 1024 * 1024) {
+                    alert('Image is too large. Please use an image smaller than 20MB.');
+                    return;
+                  }
                   
-                  // Add click handler for resizing
-                  setTimeout(() => {
-                    const images = this.quill.root.querySelectorAll('img');
-                    images.forEach(img => {
-                      img.style.cursor = 'pointer';
-                      img.onclick = () => showImageResizeModal(img, this.quill);
-                    });
-                  }, 100);
+                  try {
+                    // Show uploading status
+                    const range = this.quill.getSelection();
+                    this.quill.insertText(range.index, '[Uploading image...]');
+                    
+                    // Upload to hosting service (imgur) or fallback to compressed base64
+                    const imageUrl = await uploadImageToHost(file);
+                    
+                    // Remove the uploading text and insert actual image
+                    this.quill.deleteText(range.index, '[Uploading image...]'.length);
+                    this.quill.insertEmbed(range.index, 'image', imageUrl);
+                    
+                    // Add click handler for resizing
+                    setTimeout(() => {
+                      const images = this.quill.root.querySelectorAll('img');
+                      images.forEach(img => {
+                        img.style.cursor = 'pointer';
+                        img.onclick = () => showImageResizeModal(img, this.quill);
+                      });
+                    }, 100);
+                    
+                  } catch (error) {
+                    console.error('Image upload failed:', error);
+                    alert('Failed to upload image. Please try again or use a smaller image.');
+                    // Remove the uploading text
+                    const currentRange = this.quill.getSelection();
+                    if (currentRange) {
+                      this.quill.deleteText(currentRange.index - '[Uploading image...]'.length, '[Uploading image...]'.length);
+                    }
+                  }
+                }
+              };
+            } else {
+              // URL input
+              const url = prompt('Enter image URL:\n\nNote: The image must be publicly accessible and allow cross-origin access.');
+              if (url) {
+                // Try to validate and load the image
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                  // Convert to base64 to ensure it works offline
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0);
+                  
+                  try {
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                    const range = this.quill.getSelection();
+                    this.quill.insertEmbed(range.index, 'image', dataUrl);
+                    
+                    // Add click handler
+                    setTimeout(() => {
+                      const images = this.quill.root.querySelectorAll('img');
+                      images.forEach(img => {
+                        img.style.cursor = 'pointer';
+                        img.onclick = () => showImageResizeModal(img, this.quill);
+                      });
+                    }, 100);
+                  } catch (e) {
+                    alert('Could not load image. The image may be protected by CORS policy.');
+                  }
                 };
-                reader.readAsDataURL(file);
+                img.onerror = () => {
+                  alert('Failed to load image. Please check the URL or try uploading the image file directly.');
+                };
+                img.src = url;
               }
-            };
+            }
           }
         }
       }
@@ -251,6 +510,81 @@ function createQuillEditor(container, placeholder = "Type your answer here...") 
       showImageResizeModal(e.target, quill);
     }
   });
+  
+  // Add drag and drop support for images
+  const editor = quill.root;
+  
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    editor.addEventListener(eventName, preventDefaults, false);
+  });
+  
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  
+  ['dragenter', 'dragover'].forEach(eventName => {
+    editor.addEventListener(eventName, () => {
+      editor.classList.add('drag-over');
+    }, false);
+  });
+  
+  ['dragleave', 'drop'].forEach(eventName => {
+    editor.addEventListener(eventName, () => {
+      editor.classList.remove('drag-over');
+    }, false);
+  });
+  
+  editor.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    handleFiles(files, quill);
+  }, false);
+  
+  function handleFiles(files, quill) {
+    ([...files]).forEach(async (file) => {
+      if (file.type.startsWith('image/')) {
+        if (file.size > 20 * 1024 * 1024) {
+          alert(`Image "${file.name}" is too large. Please use images smaller than 20MB.`);
+          return;
+        }
+        
+        try {
+          // Show uploading status
+          const range = quill.getSelection() || { index: quill.getLength() };
+          quill.insertText(range.index, `[Uploading ${file.name}...]`);
+          
+          // Upload to hosting service or fallback to compressed base64
+          const imageUrl = await uploadImageToHost(file);
+          
+          // Remove the uploading text and insert actual image
+          quill.deleteText(range.index, `[Uploading ${file.name}...]`.length);
+          quill.insertEmbed(range.index, 'image', imageUrl);
+          
+          setTimeout(() => {
+            const images = quill.root.querySelectorAll('img');
+            images.forEach(img => {
+              img.style.cursor = 'pointer';
+              img.onclick = () => showImageResizeModal(img, quill);
+            });
+          }, 100);
+          
+        } catch (error) {
+          console.error('Drag & drop image upload failed:', error);
+          alert(`Failed to upload "${file.name}". Please try again.`);
+          // Remove the uploading text
+          const currentLength = quill.getLength();
+          const uploadText = `[Uploading ${file.name}...]`;
+          const content = quill.getText();
+          const uploadIndex = content.lastIndexOf(uploadText);
+          if (uploadIndex !== -1) {
+            quill.deleteText(uploadIndex, uploadText.length);
+          }
+        }
+      }
+    });
+  }
 
   return quill;
 }
@@ -367,8 +701,29 @@ function createBuilder() {
   
   container.addEventListener('drop', (e) => {
     e.preventDefault();
+    if (draggedElement) {
+      // Reorder the questions array to match the new DOM order
+      reorderQuestionsArray();
+    }
     draggedElement = null;
   });
+
+  // Reorder the questions array to match the DOM order
+  const reorderQuestionsArray = function() {
+    const orderedBlocks = [...container.querySelectorAll('.question-card, .section-card')];
+    const newQuestionsOrder = [];
+    
+    orderedBlocks.forEach(block => {
+      const questionData = questions.find(q => q.block === block);
+      if (questionData) {
+        newQuestionsOrder.push(questionData);
+      }
+    });
+    
+    // Replace the questions array with the reordered version
+    questions.length = 0; // Clear array
+    questions.push(...newQuestionsOrder); // Add in new order
+  };
 
   updateQuestionNumbers = function() {
     let questionCount = 0;
@@ -422,17 +777,28 @@ function createBuilder() {
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "btn-icon delete";
     deleteBtn.innerHTML = createIcon('delete');
-    deleteBtn.onclick = () => {
+    deleteBtn.title = `Delete this ${isSection ? 'section' : 'question'}`;
+    
+    deleteBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
       if (confirm(`Are you sure you want to delete this ${isSection ? 'section' : 'question'}?`)) {
         const idx = questions.findIndex(q => q.block === block);
+        
         if (idx > -1) {
           questions.splice(idx, 1);
           block.remove();
           updateQuestionNumbers();
           checkEmptyState();
+        } else {
+          // Force remove from DOM even if not found in array (graceful fallback)
+          block.remove();
+          updateQuestionNumbers();
+          checkEmptyState();
         }
       }
-    };
+    });
 
     actions.appendChild(dragBtn);
     actions.appendChild(deleteBtn);
@@ -456,25 +822,32 @@ function createBuilder() {
       e.preventDefault();
     });
 
-    // Add description textarea with Markdown support
+    // Add description with rich text editor
     const descriptionLabel = document.createElement("label");
     descriptionLabel.className = "form-label";
-    descriptionLabel.textContent = "Description (supports Markdown)";
+    descriptionLabel.textContent = "Description (Rich Text Editor)";
     descriptionLabel.style.marginTop = "1rem";
-    descriptionLabel.style.fontSize = "0.75rem";
+    descriptionLabel.style.fontSize = "0.875rem";
 
-    const descriptionTextarea = document.createElement("textarea");
-    descriptionTextarea.placeholder = isSection ? "Section description (optional)... You can use **bold**, *italic*, [links](url), etc." : "Question description or additional instructions (optional)... Supports Markdown formatting.";
-    descriptionTextarea.rows = 2;
-    descriptionTextarea.style.marginTop = "0.25rem";
-    descriptionTextarea.style.resize = "vertical";
-    descriptionTextarea.className = "form-input";
+    // Create container for Quill editor
+    const descriptionContainer = document.createElement("div");
+    descriptionContainer.className = "description-editor-container";
+    descriptionContainer.style.marginTop = "0.5rem";
     
-    // Prevent drag on textarea
-    descriptionTextarea.addEventListener('mousedown', (e) => {
+    // Create a simplified Quill editor for descriptions
+    const descriptionEditor = createQuillEditor(descriptionContainer, 
+      isSection ? "Section description (optional)... You can add text, images, formatting, etc." 
+                : "Question description or additional instructions (optional)... Add images, formatted text, etc.",
+      false); // Don't show help text for description fields
+    
+    // Make it smaller for descriptions
+    descriptionContainer.querySelector('.ql-editor').style.minHeight = '80px';
+    
+    // Prevent drag on editor
+    descriptionContainer.addEventListener('mousedown', (e) => {
       e.stopPropagation();
     });
-    descriptionTextarea.addEventListener('dragstart', (e) => {
+    descriptionContainer.addEventListener('dragstart', (e) => {
       e.preventDefault();
     });
 
@@ -482,7 +855,7 @@ function createBuilder() {
     contentWrapper.className = "question-content";
     contentWrapper.appendChild(qInput);
     contentWrapper.appendChild(descriptionLabel);
-    contentWrapper.appendChild(descriptionTextarea);
+    contentWrapper.appendChild(descriptionContainer);
     
     // Prevent any drag behavior on content
     contentWrapper.addEventListener('dragstart', (e) => {
@@ -589,13 +962,13 @@ function createBuilder() {
       questions.push({ 
         block, 
         input: qInput, 
-        description: descriptionTextarea, 
+        description: descriptionEditor, 
         imgCheck: hasImage, 
         wordLimit: wordLimitInput,
         type: 'question' 
       });
     } else {
-      questions.push({ block, input: qInput, description: descriptionTextarea, type: 'section' });
+      questions.push({ block, input: qInput, description: descriptionEditor, type: 'section' });
     }
 
     // Drag and drop handlers - only on the drag button
@@ -683,66 +1056,172 @@ function createBuilder() {
   const generateBtn = document.createElement("button");
   generateBtn.className = "btn btn-success";
   generateBtn.innerHTML = createIcon('share') + "Generate Share Link";
-  generateBtn.onclick = () => {
-    const orderedQuestions = [...container.querySelectorAll('.question-card, .section-card')].map(block => {
-      const q = questions.find(q => q.block === block);
-      if (q.type === 'section') {
-        return {
-          type: 'section',
-          title: q.input.value.trim(),
-          description: q.description.value.trim()
-        };
-      } else {
-        return {
-          type: 'question',
-          question: q.input.value.trim(),
-          description: q.description.value.trim(),
-          allowImage: q.imgCheck.checked,
-          wordLimit: q.wordLimit.value ? parseInt(q.wordLimit.value) : null
-        };
+  generateBtn.onclick = async () => {
+    // Show loading state
+    generateBtn.disabled = true;
+    const originalText = generateBtn.innerHTML;
+    generateBtn.innerHTML = createIcon('progress') + "Processing Images...";
+    
+    try {
+      const orderedQuestions = await Promise.all(
+        [...container.querySelectorAll('.question-card, .section-card')].map(async (block) => {
+          const q = questions.find(q => q.block === block);
+          if (q.type === 'section') {
+            const processedDescription = await processImagesInHtml(q.description.root.innerHTML);
+            return {
+              type: 'section',
+              title: q.input.value.trim(),
+              description: processedDescription
+            };
+          } else {
+            const processedDescription = await processImagesInHtml(q.description.root.innerHTML);
+            return {
+              type: 'question',
+              question: q.input.value.trim(),
+              description: processedDescription,
+              allowImage: q.imgCheck.checked,
+              wordLimit: q.wordLimit.value ? parseInt(q.wordLimit.value) : null
+            };
+          }
+        })
+      );
+      
+      const filteredQuestions = orderedQuestions.filter(item => 
+        (item.type === 'section' ? item.title.length > 0 : item.question.length > 0)
+      );
+
+      const hasQuestions = filteredQuestions.some(item => item.type === 'question');
+      if (!hasQuestions) {
+        alert("Please add at least one question with text.");
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = originalText;
+        return;
       }
-    }).filter(item => (item.type === 'section' ? item.title.length > 0 : item.question.length > 0));
 
-    const hasQuestions = orderedQuestions.some(item => item.type === 'question');
-    if (!hasQuestions) {
-      alert("Please add at least one question with text.");
-      return;
+      const assignmentData = {
+        title: document.getElementById('assignment-title').value.trim() || 'Untitled Assignment',
+        instructions: document.getElementById('assignment-instructions').value.trim(),
+        studentFields: {
+          name: document.getElementById('field-name').checked,
+          snumber: document.getElementById('field-snumber').checked,
+          group: document.getElementById('field-group').checked
+        },
+        questions: filteredQuestions
+      };
+
+      const encoded = encodeFormData(assignmentData);
+      if (!encoded) {
+        alert('Error encoding assignment data. Please try again or reduce the content size.');
+        return;
+      }
+      
+      const link = `${window.location.origin}${window.location.pathname}?exercise=${encoded}`;
+      
+      // Check URL length limits and offer high compression if needed
+      if (link.length > 8000) {
+        const retry = confirm('Assignment is too large for URL sharing. Try high compression mode?\n\n• This will reduce image quality significantly\n• Choose "OK" to try high compression\n• Choose "Cancel" to manually reduce content');
+        
+        if (retry) {
+          // Retry with high compression
+          generateBtn.innerHTML = createIcon('progress') + "Applying High Compression...";
+          
+          const highCompressedQuestions = await Promise.all(
+            orderedQuestions.map(async (item) => {
+              if (item.description && item.description.includes('<img')) {
+                // Re-process with high compression
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = item.description;
+                const images = tempDiv.querySelectorAll('img[src^="data:image/"]');
+                
+                for (const img of images) {
+                  try {
+                    const highCompressed = await compressImage(img.src, 400, 0.4); // Lower quality/size
+                    img.src = highCompressed;
+                  } catch (error) {
+                    console.error('High compression failed:', error);
+                  }
+                }
+                
+                return { ...item, description: tempDiv.innerHTML };
+              }
+              return item;
+            })
+          );
+          
+          const highCompressedData = { ...assignmentData, questions: highCompressedQuestions };
+          const highCompressedEncoded = encodeFormData(highCompressedData);
+          const highCompressedLink = `${window.location.origin}${window.location.pathname}?exercise=${highCompressedEncoded}`;
+          
+          if (highCompressedLink.length > 8000) {
+            alert('Even with high compression, the assignment is too large. Please:\n• Remove some images\n• Reduce text content\n• Split into multiple assignments');
+            return;
+          }
+          
+          // Use the high compressed version
+          Object.assign(assignmentData, highCompressedData);
+          link = highCompressedLink;
+          console.log(`High compression successful: ${link.length} characters`);
+        } else {
+          return;
+        }
+      }
+      
+      if (link.length > 2000) {
+        console.warn(`URL is ${link.length} characters. May not work in older browsers.`);
+      }
+
+      const shareSection = document.createElement("div");
+      shareSection.className = "share-section";
+      
+      // Calculate URL size info and hosting status
+      const linkSizeKB = Math.round((link.length * 2) / 1024); // Approximate UTF-8 size
+      const sizeWarning = link.length > 6000 ? '<p style="color: #f39c12; font-size: 0.875rem;">⚠️ Large URL - may not work in older browsers</p>' : '';
+      
+      // Check if images are hosted vs embedded
+      const hasHostedImages = link.includes('imgur.com');
+      const hasBase64Images = link.includes('data:image/');
+      
+      let imageInfo = '';
+      if (hasHostedImages && hasBase64Images) {
+        imageInfo = '<p style="color: #28a745; font-size: 0.875rem;">🌐 Mixed: Some images hosted online, some embedded</p>';
+      } else if (hasHostedImages) {
+        imageInfo = '<p style="color: #28a745; font-size: 0.875rem;">🌐 Images hosted online - URLs stay short!</p>';
+      } else if (hasBase64Images) {
+        imageInfo = '<p style="color: #6c757d; font-size: 0.875rem;">💡 Images embedded and compressed</p>';
+      }
+      
+      shareSection.innerHTML = `
+        <h3>${createIcon('check')} Assignment Created Successfully!</h3>
+        <p>Share this link with your students:</p>
+        <div class="share-link">
+          <textarea readonly>${link}</textarea>
+          <button class="copy-btn" onclick="copyToClipboard(this, '${link}')">Copy Link</button>
+        </div>
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e9ecef;">
+          <p style="color: #6c757d; font-size: 0.875rem; margin: 0;">URL Size: ~${linkSizeKB} KB (${link.length} characters)</p>
+          ${sizeWarning}
+          ${imageInfo}
+        </div>
+      `;
+      
+      const existingShare = document.querySelector('.share-section');
+      if (existingShare) existingShare.remove();
+      
+      const mainArea = document.querySelector('.main-area') || app;
+      mainArea.appendChild(shareSection);
+      
+      // Animate share section
+      shareSection.classList.add('fade-in');
+      shareSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+    } catch (error) {
+      console.error('Error generating share link:', error);
+      alert('An error occurred while processing images. Some images may not be included in the share link.');
+    } finally {
+      // Restore button state
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = originalText;
     }
-
-    const assignmentData = {
-      title: document.getElementById('assignment-title').value.trim() || 'Untitled Assignment',
-      instructions: document.getElementById('assignment-instructions').value.trim(),
-      studentFields: {
-        name: document.getElementById('field-name').checked,
-        snumber: document.getElementById('field-snumber').checked,
-        group: document.getElementById('field-group').checked
-      },
-      questions: orderedQuestions
-    };
-
-    const encoded = encodeFormData(assignmentData);
-    const link = `${window.location.origin}${window.location.pathname}?exercise=${encoded}`;
-
-    const shareSection = document.createElement("div");
-    shareSection.className = "share-section";
-    shareSection.innerHTML = `
-      <h3>${createIcon('check')} Assignment Created Successfully!</h3>
-      <p>Share this link with your students:</p>
-      <div class="share-link">
-        <textarea readonly>${link}</textarea>
-        <button class="copy-btn" onclick="copyToClipboard(this, '${link}')">Copy Link</button>
-      </div>
-    `;
-    
-    const existingShare = document.querySelector('.share-section');
-    if (existingShare) existingShare.remove();
-    
-    const mainArea = document.querySelector('.main-area') || app;
-    mainArea.appendChild(shareSection);
-    
-    // Animate share section
-    shareSection.classList.add('fade-in');
-    shareSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   questionsCard.appendChild(container);
@@ -881,9 +1360,11 @@ function createFiller(data) {
       
       sectionCard.appendChild(sectionTitle);
       
-      if (item.description) {
-        const sectionDesc = document.createElement("p");
-        sectionDesc.innerHTML = marked.parse(item.description);
+      if (item.description && item.description.trim() !== '<p><br></p>') {
+        const sectionDesc = document.createElement("div");
+        sectionDesc.className = "section-description";
+        // Simply set the HTML content directly since it's already HTML from Quill
+        sectionDesc.innerHTML = item.description;
         sectionCard.appendChild(sectionDesc);
       }
       
@@ -928,15 +1409,12 @@ function createFiller(data) {
       
       questionCard.appendChild(header);
       
-      if (item.description) {
+      if (item.description && item.description.trim() !== '<p><br></p>') {
         const descDiv = document.createElement("div");
+        descDiv.className = "question-description";
         descDiv.style.marginBottom = "1rem";
-        descDiv.style.padding = "0.75rem";
-        descDiv.style.background = "var(--ut-gray-50)";
-        descDiv.style.borderRadius = "var(--radius)";
-        descDiv.style.color = "var(--ut-gray-600)";
-        descDiv.style.fontSize = "0.875rem";
-        descDiv.innerHTML = marked.parse(item.description);
+        // Simply set the HTML content directly since it's already HTML from Quill
+        descDiv.innerHTML = item.description;
         questionCard.appendChild(descDiv);
       }
 
@@ -1563,232 +2041,808 @@ function downloadYAML(content, title) {
 }
 
 async function generatePDF(data, answers, studentInfo) {
-  const pdfContent = document.getElementById('pdf-content');
-  
-  let htmlContent = `
-    <style>
-      body { 
-        font-family: 'Times New Roman', Times, serif; 
-        line-height: 1.5; 
-        color: #171717; 
-        font-size: 12pt;
-      }
-      .report-header { 
-        text-align: center; 
-        margin-bottom: 40px; 
-        border-bottom: 2px solid #002c5f; 
-        padding-bottom: 20px;
-      }
-      .report-header h1 { 
-        color: #002c5f; 
-        font-size: 24pt; 
-        margin: 0 0 10px 0; 
-        font-family: Arial, sans-serif;
-      }
-      .report-header h2 {
-        color: #cf0072;
-        font-size: 18pt;
-        margin: 0;
-        font-family: Arial, sans-serif;
-        font-weight: normal;
-      }
-      .student-info { 
-        margin-bottom: 40px; 
-        padding: 15px;
-        border: 1px solid #e5e5e5;
-        border-radius: 8px;
-        background: #fafafa;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px 20px;
-      }
-      .student-info p { 
-        margin: 0; 
-        font-size: 11pt;
-      }
-      .instructions {
-        background: #f0f7ff; 
-        padding: 15px; 
-        border-left: 3px solid #0094b3; 
-        margin-bottom: 30px; 
-        font-style: italic;
-        color: #404040;
-      }
-      .section-wrapper {
-        page-break-inside: avoid;
-      }
-      .question-block { 
-        margin-bottom: 25px; 
-        page-break-inside: avoid;
-        page-break-after: auto;
-      }
-      .section-header {
-        page-break-after: avoid;
-        margin-bottom: 20px;
-      }
-      .question-title { 
-        font-size: 14pt; 
-        font-weight: bold; 
-        color: #4f2d7f; 
-        margin-bottom: 15px; 
-      }
-      .answer-content { 
-        margin-left: 0;
-      }
-      .answer-content img { 
-        max-width: 100%; 
-        height: auto; 
-        margin: 15px 0; 
-        border-radius: 6px; 
-        border: 1px solid #e5e5e5;
-        display: block;
-      }
-      hr {
-        border: 0;
-        border-top: 1px solid #d4d4d4;
-        margin: 40px 0;
-      }
-      table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-      th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
-      th { background: #f5f0ff; }
-      blockquote { border-left: 3px solid #cf0072; padding-left: 15px; margin-left: 0; color: #525252; font-style: italic; }
-      pre { background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 10pt; }
-      .no-answer { color: #737373; font-style: italic; }
-    </style>
-    
-    <div class="report-header">
-      <h1>University of Twente</h1>
-      <h2>${data.title || 'Assignment Report'}</h2>
-    </div>
-    
-    <div class="student-info">
+  // Show loading indicator
+  const loadingDiv = document.createElement('div');
+  loadingDiv.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px 40px;
+    border-radius: 8px;
+    font-size: 16px;
+    z-index: 10000;
   `;
-
-  if (studentInfo.name) htmlContent += `<p><strong>Student Name:</strong> ${studentInfo.name}</p>`;
-  if (studentInfo.snumber) htmlContent += `<p><strong>S-Number:</strong> ${studentInfo.snumber}</p>`;
-  if (studentInfo.group) htmlContent += `<p><strong>Group:</strong> ${studentInfo.group}</p>`;
-  htmlContent += `<p><strong>Submission Date:</strong> ${studentInfo.date}</p>`;
-  htmlContent += `</div>`;
-
-  if (data.instructions) {
-    htmlContent += `<div class="instructions">${data.instructions}</div>`;
-  }
-
-  let answerIndex = 0;
-  let questionNumber = 0;
-  let currentSectionContent = '';
-  let inSection = false;
+  loadingDiv.textContent = 'Generating PDF...';
+  document.body.appendChild(loadingDiv);
   
-  for (let i = 0; i < data.questions.length; i++) {
-    const item = data.questions[i];
-    const nextItem = data.questions[i + 1];
+  try {
+    // Create jsPDF instance
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true
+    });
     
-    if (item.type === 'section') {
-      // Close previous section if exists
-      if (inSection && currentSectionContent) {
-        htmlContent += `</div>` + currentSectionContent;
-        currentSectionContent = '';
+    // Constants for layout - efficient spacing
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20; // Smaller margins
+    const contentWidth = pageWidth - (2 * margin);
+    let yPos = 25; // Start position
+    
+    // Simple page numbers only
+    const addPageNumber = () => {
+      const currentPage = pdf.internal.getCurrentPageInfo().pageNumber;
+      const savedSize = pdf.internal.getFontSize();
+      
+      pdf.setFontSize(10);
+      pdf.setFont('times', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text(String(currentPage), pageWidth / 2, pageHeight - 15, { align: 'center' });
+      
+      pdf.setFontSize(savedSize);
+    };
+    
+    // Helper function to check page overflow
+    const checkPageOverflow = (height) => {
+      if (yPos + height > pageHeight - margin - 10) {
+        pdf.addPage();
+        yPos = margin;
+        addPageNumber();
       }
-      
-      // Start new section
-      htmlContent += `
-        <div class="section-wrapper" style="page-break-inside: avoid;">
-          <hr>
-          <div class="section-header">
-            <h2 style="color: #002c5f; font-family: Arial, sans-serif; font-size: 18pt; border-bottom: 1px solid #a3a3a3; padding-bottom: 8px;">${item.title}</h2>
-            ${item.description ? `<p style="color: #525252; margin-top: 10px; font-style: italic;">${item.description}</p>` : ''}
-          </div>
-      `;
-      inSection = true;
-    } else {
-      questionNumber++;
-      const ans = answers[answerIndex];
-      answerIndex++;
-      
-      htmlContent += `
-        <div class="question-block">
-          <h3 class="question-title">Question ${questionNumber}: ${ans.question}</h3>
-          ${item.description ? `<p style="margin: -10px 0 15px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; color: #525252; font-size: 10pt;">${item.description}</p>` : ''}
-          <div class="answer-content">
-      `;
-      
-      const answerHtml = ans.editor.root.innerHTML;
-      if (answerHtml && answerHtml !== '<p><br></p>') {
-        htmlContent += answerHtml;
-      } else {
-        htmlContent += '<p class="no-answer">(No answer provided)</p>';
+    };
+    
+    // Helper to extract plain text from HTML
+    const htmlToText = (html) => {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      // Convert br tags to newlines
+      temp.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+      // Convert p tags to double newlines
+      temp.querySelectorAll('p').forEach(p => {
+        p.prepend('\n');
+        p.append('\n');
+      });
+      return temp.textContent || temp.innerText || '';
+    };
+    
+    // Helper to add wrapped text with compact spacing
+    const addWrappedText = (text, x, y, maxWidth, lineHeight = 5) => {
+      const lines = pdf.splitTextToSize(text, maxWidth);
+      for (let i = 0; i < lines.length; i++) {
+        checkPageOverflow(lineHeight);
+        pdf.text(lines[i], x, yPos);
+        yPos += lineHeight;
       }
+      return yPos;
+    };
+    
+    // Set metadata
+    pdf.setProperties({
+      title: data.title || 'Assignment Report',
+      subject: 'University of Twente Assignment',
+      author: studentInfo.name || 'Student',
+      keywords: `assignment,${data.title},${studentInfo.snumber || ''}`,
+      creator: 'UT Assignment Formatting Assistant'
+    });
+    
+    // Compact header
+    pdf.setFontSize(18);
+    pdf.setFont('times', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text(data.title || 'Assignment', pageWidth / 2, 25, { align: 'center' });
+    yPos = 35;
+    
+    pdf.setFontSize(11);
+    pdf.setFont('times', 'normal');
+    pdf.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), pageWidth / 2, yPos, { align: 'center' });
+    yPos += 12;
+    
+    // Student info box
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.5);
+    const infoBoxHeight = 30;
+    pdf.rect(margin, yPos, contentWidth, infoBoxHeight);
+    
+    // Student info content
+    yPos += 8;
+    pdf.setFont('times', 'normal');
+    let infoY = yPos;
+    
+    if (studentInfo.name) {
+      pdf.text(`Name: ${studentInfo.name}`, margin + 5, infoY);
+      infoY += 7;
+    }
+    if (studentInfo.snumber) {
+      pdf.text(`Student Number: ${studentInfo.snumber}`, margin + 5, infoY);
+      infoY += 7;
+    }
+    if (studentInfo.group) {
+      pdf.text(`Group: ${studentInfo.group}`, margin + 5, infoY);
+      infoY += 7;
+    }
+    pdf.text(`Date: ${studentInfo.date}`, margin + 5, infoY);
+    
+    yPos += infoBoxHeight + 8;
+    
+    // Instructions if any
+    if (data.instructions) {
+      pdf.setFontSize(11);
+      pdf.setFont('times', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('Instructions:', margin, yPos);
+      yPos += 5;
       
-      if (ans.fileInput && ans.fileInput.files.length > 0) {
-        const file = ans.fileInput.files[0];
-        // Use cached base64 if available
-        const base64 = file.base64 || await toBase64(file);
-        htmlContent += `<p style="margin-top: 15px;"><strong>Attached Image:</strong></p><img src="${base64}" style="max-width: 500px;" />`;
-      }
+      pdf.setFontSize(10);
+      pdf.setFont('times', 'normal');
+      addWrappedText(data.instructions, margin, yPos, contentWidth);
+      yPos += 6;
+    }
+    
+    // Process questions and answers
+    let questionNumber = 0;
+    let answerIndex = 0;
+    
+    for (let i = 0; i < data.questions.length; i++) {
+      const item = data.questions[i];
       
-      currentSectionContent += `</div></div>`;
-      
-      // If this is the last question in a section or the last question overall
-      if (!nextItem || (nextItem && nextItem.type === 'section')) {
-        if (inSection) {
-          htmlContent += currentSectionContent + `</div>`;
-          currentSectionContent = '';
-          inSection = false;
-        } else {
-          htmlContent += currentSectionContent;
-          currentSectionContent = '';
+      if (item.type === 'section') {
+        // Section
+        checkPageOverflow(15);
+        yPos += 10; // Reduced space before sections
+        
+        pdf.setFontSize(13);
+        pdf.setFont('times', 'bold');
+        pdf.setTextColor(0, 0, 0);
+        pdf.text(item.title, margin, yPos);
+        yPos += 6;
+        
+        if (item.description && item.description.trim() !== '') {
+          pdf.setFontSize(10);
+          pdf.setFont('times', 'normal');
+          pdf.setTextColor(0, 0, 0);
+          
+          // Process section description with rich content (including images)
+          const processSectionContent = async (html) => {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            // Get all images first and preload them
+            const images = tempDiv.getElementsByTagName('img');
+            const imagePromises = [];
+            const imageData = new Map();
+            
+            for (const img of images) {
+              const promise = new Promise((resolve) => {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                  imageData.set(img.src, {
+                    width: tempImg.width,
+                    height: tempImg.height,
+                    src: img.src
+                  });
+                  resolve();
+                };
+                tempImg.onerror = () => {
+                  console.error('Failed to load section image:', img.src);
+                  resolve();
+                };
+                tempImg.src = img.src;
+              });
+              imagePromises.push(promise);
+            }
+            
+            await Promise.all(imagePromises);
+            
+            // Process the HTML content
+            const processNode = (node) => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                if (node.textContent.trim()) {
+                  addWrappedText(node.textContent, margin, yPos, contentWidth);
+                  yPos += 4;
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === 'IMG') {
+                  const imgData = imageData.get(node.src);
+                  if (imgData) {
+                    // Add the image to PDF
+                    checkPageOverflow(60); // Ensure space for image
+                    
+                    const maxImageWidth = contentWidth * 0.8;
+                    const aspectRatio = imgData.height / imgData.width;
+                    let imageWidth = Math.min(imgData.width, maxImageWidth);
+                    let imageHeight = imageWidth * aspectRatio;
+                    
+                    // Center the image
+                    const imageX = margin + (contentWidth - imageWidth) / 2;
+                    
+                    try {
+                      pdf.addImage(node.src, 'JPEG', imageX, yPos, imageWidth, imageHeight);
+                      yPos += imageHeight + 5;
+                    } catch (error) {
+                      console.error('Error adding section image to PDF:', error);
+                      // Add text fallback
+                      pdf.setTextColor(150, 150, 150);
+                      pdf.text('[Image could not be displayed]', margin, yPos);
+                      yPos += 5;
+                      pdf.setTextColor(0, 0, 0);
+                    }
+                  }
+                } else if (node.tagName === 'P') {
+                  for (const child of node.childNodes) {
+                    processNode(child);
+                  }
+                  yPos += 2; // Extra space after paragraphs
+                } else {
+                  // Process other elements (bold, italic, etc.)
+                  for (const child of node.childNodes) {
+                    processNode(child);
+                  }
+                }
+              }
+            };
+            
+            for (const child of tempDiv.childNodes) {
+              processNode(child);
+            }
+          };
+          
+          await processSectionContent(item.description);
+          yPos += 3;
         }
+      } else {
+        // Question
+        questionNumber++;
+        const answer = answers[answerIndex];
+        answerIndex++;
+        
+        // Question with compact formatting
+        checkPageOverflow(10);
+        yPos += 6; // Minimal space before question
+        
+        // Question header
+        pdf.setFontSize(11);
+        pdf.setFont('times', 'bold');
+        pdf.setTextColor(0, 0, 0);
+        const qText = `Question ${questionNumber}: ${item.question}`;
+        addWrappedText(qText, margin, yPos, contentWidth);
+        yPos += 5;
+        
+        // Question description (if any) with images
+        if (item.description && item.description.trim() !== '') {
+          pdf.setFontSize(10);
+          pdf.setFont('times', 'normal');
+          pdf.setTextColor(0, 0, 0);
+          
+          // Process question description with rich content (including images)
+          const processQuestionContent = async (html) => {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            // Get all images first and preload them
+            const images = tempDiv.getElementsByTagName('img');
+            const imagePromises = [];
+            const imageData = new Map();
+            
+            for (const img of images) {
+              const promise = new Promise((resolve) => {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                  imageData.set(img.src, {
+                    width: tempImg.width,
+                    height: tempImg.height,
+                    src: img.src
+                  });
+                  resolve();
+                };
+                tempImg.onerror = () => {
+                  console.error('Failed to load question image:', img.src);
+                  resolve();
+                };
+                tempImg.src = img.src;
+              });
+              imagePromises.push(promise);
+            }
+            
+            await Promise.all(imagePromises);
+            
+            // Process the HTML content similar to answer processing
+            const processNode = (node) => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                if (node.textContent.trim()) {
+                  addWrappedText(node.textContent, margin, yPos, contentWidth);
+                  yPos += 4;
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === 'IMG') {
+                  const imgData = imageData.get(node.src);
+                  if (imgData) {
+                    // Add the image to PDF
+                    checkPageOverflow(60); // Ensure space for image
+                    
+                    const maxImageWidth = contentWidth * 0.8;
+                    const aspectRatio = imgData.height / imgData.width;
+                    let imageWidth = Math.min(imgData.width, maxImageWidth);
+                    let imageHeight = imageWidth * aspectRatio;
+                    
+                    // Center the image
+                    const imageX = margin + (contentWidth - imageWidth) / 2;
+                    
+                    try {
+                      pdf.addImage(node.src, 'JPEG', imageX, yPos, imageWidth, imageHeight);
+                      yPos += imageHeight + 5;
+                    } catch (error) {
+                      console.error('Error adding question image to PDF:', error);
+                      // Add text fallback
+                      pdf.setTextColor(150, 150, 150);
+                      pdf.text('[Image could not be displayed]', margin, yPos);
+                      yPos += 5;
+                      pdf.setTextColor(0, 0, 0);
+                    }
+                  }
+                } else if (node.tagName === 'P') {
+                  for (const child of node.childNodes) {
+                    processNode(child);
+                  }
+                  yPos += 2; // Extra space after paragraphs
+                } else {
+                  // Process other elements (bold, italic, etc.)
+                  for (const child of node.childNodes) {
+                    processNode(child);
+                  }
+                }
+              }
+            };
+            
+            for (const child of tempDiv.childNodes) {
+              processNode(child);
+            }
+          };
+          
+          await processQuestionContent(item.description);
+          yPos += 3; // Space after question description
+        }
+        
+        // Answer label
+        pdf.setFont('times', 'italic');
+        pdf.setFontSize(10);
+        pdf.text('Answer:', margin, yPos);
+        yPos += 4;
+        
+        // Answer content
+        pdf.setFontSize(10);
+        pdf.setFont('times', 'normal');
+        pdf.setTextColor(0, 0, 0);
+        
+        const answerHTML = answer.editor.root.innerHTML;
+        if (!answerHTML || answerHTML.trim() === '') {
+          pdf.setTextColor(150, 150, 150);
+          pdf.setFont('helvetica', 'italic');
+          pdf.text('(No answer provided)', margin, yPos);
+          yPos += 7;
+        } else {
+          // Process rich content with embedded images
+          const processRichContent = async (html) => {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            // Get all images first and preload them
+            const images = tempDiv.getElementsByTagName('img');
+            const imagePromises = [];
+            const imageData = new Map();
+            
+            for (const img of images) {
+              const promise = new Promise((resolve) => {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                  imageData.set(img.src, {
+                    width: tempImg.width,
+                    height: tempImg.height,
+                    src: img.src
+                  });
+                  resolve();
+                };
+                tempImg.onerror = () => {
+                  console.error('Failed to load image:', img.src);
+                  resolve();
+                };
+                tempImg.src = img.src;
+              });
+              imagePromises.push(promise);
+            }
+            
+            await Promise.all(imagePromises);
+            
+            // Track current text formatting
+            let currentFormat = {
+              bold: false,
+              italic: false,
+              underline: false,
+              fontSize: 11,
+              color: { r: 0, g: 0, b: 0 }
+            };
+            
+            // Helper to apply text formatting
+            const applyFormatting = (format) => {
+              const fontStyle = format.bold && format.italic ? 'bolditalic' : 
+                               format.bold ? 'bold' : 
+                               format.italic ? 'italic' : 'normal';
+              pdf.setFont('times', fontStyle);
+              pdf.setFontSize(format.fontSize);
+              pdf.setTextColor(format.color.r, format.color.g, format.color.b);
+            };
+            
+            // Helper to parse styles
+            const parseStyles = (element) => {
+              const format = { ...currentFormat };
+              
+              // Check for Quill classes
+              if (element.classList) {
+                if (element.classList.contains('ql-size-small')) format.fontSize = 9;
+                else if (element.classList.contains('ql-size-large')) format.fontSize = 14;
+                else if (element.classList.contains('ql-size-huge')) format.fontSize = 18;
+              }
+              
+              // Check for inline styles
+              if (element.style) {
+                if (element.style.color) {
+                  const rgb = element.style.color.match(/\d+/g);
+                  if (rgb) {
+                    format.color = { r: parseInt(rgb[0]), g: parseInt(rgb[1]), b: parseInt(rgb[2]) };
+                  }
+                }
+                if (element.style.backgroundColor && element.style.backgroundColor !== 'transparent') {
+                  // Note: PDF doesn't support background colors easily, but we could add a highlight effect
+                }
+              }
+              
+              // Check for formatting tags
+              if (element.tagName === 'STRONG' || element.tagName === 'B') format.bold = true;
+              if (element.tagName === 'EM' || element.tagName === 'I') format.italic = true;
+              if (element.tagName === 'U') format.underline = true;
+              
+              return format;
+            };
+            
+            // Now process the content in order
+            const processNode = async (node, inheritedFormat = currentFormat) => {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent;
+                if (text && text.trim()) {
+                  applyFormatting(inheritedFormat);
+                  
+                  // Handle underline if needed
+                  if (inheritedFormat.underline) {
+                    const lines = pdf.splitTextToSize(text, contentWidth);
+                    for (const line of lines) {
+                      checkPageOverflow(7);
+                      const textWidth = pdf.getTextWidth(line);
+                      pdf.text(line, margin, yPos);
+                      // Draw underline
+                      pdf.line(margin, yPos + 1, margin + textWidth, yPos + 1);
+                      yPos += 7;
+                    }
+                  } else {
+                    addWrappedText(text, margin, yPos, contentWidth);
+                  }
+                }
+              } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === 'IMG') {
+                  yPos += 5;
+                  checkPageOverflow(80);
+                  
+                  try {
+                    const imgInfo = imageData.get(node.src);
+                    if (imgInfo) {
+                      const maxImgWidth = Math.min(contentWidth * 0.8, 120); // 80% width like LaTeX
+                      const imgHeight = (imgInfo.height * maxImgWidth) / imgInfo.width;
+                      
+                      // Center the image
+                      const imgX = margin + (contentWidth - maxImgWidth) / 2;
+                      
+                      // Add the image with border
+                      pdf.setDrawColor(200, 200, 200);
+                      pdf.setLineWidth(0.3);
+                      pdf.rect(imgX - 2, yPos - 2, maxImgWidth + 4, imgHeight + 4);
+                      pdf.addImage(node.src, 'JPEG', imgX, yPos, maxImgWidth, imgHeight);
+                      yPos += imgHeight + 3;
+                      
+                      // Add figure caption
+                      pdf.setFontSize(9);
+                      pdf.setFont('times', 'italic');
+                      pdf.setTextColor(80, 80, 80);
+                      const figNum = processNode.figureCount = (processNode.figureCount || 0) + 1;
+                      pdf.text(`Figure ${figNum}`, pageWidth / 2, yPos + 3, { align: 'center' });
+                      yPos += 5;
+                      
+                      // Reset formatting
+                      applyFormatting(inheritedFormat);
+                    } else {
+                      throw new Error('Image not preloaded');
+                    }
+                  } catch (e) {
+                    console.error('Error adding embedded image:', e);
+                    pdf.setTextColor(255, 0, 0);
+                    pdf.text('[Image could not be loaded]', margin, yPos);
+                    yPos += 7;
+                    // Reset color
+                    applyFormatting(inheritedFormat);
+                  }
+                } else if (node.tagName === 'P' || node.tagName === 'DIV') {
+                  const format = parseStyles(node);
+                  
+                  // Check text alignment
+                  let alignment = 'left';
+                  if (node.classList) {
+                    if (node.classList.contains('ql-align-center')) alignment = 'center';
+                    else if (node.classList.contains('ql-align-right')) alignment = 'right';
+                    else if (node.classList.contains('ql-align-justify')) alignment = 'justify';
+                  }
+                  
+                  // Save current position for alignment
+                  const savedMargin = margin;
+                  const savedYPos = yPos;
+                  
+                  // Process paragraph/div contents in order
+                  for (const child of node.childNodes) {
+                    await processNode(child, format);
+                  }
+                  yPos += 1; // Minimal space after block element
+                } else if (node.tagName === 'BR') {
+                  yPos += 3; // Line break
+                } else if (node.tagName === 'UL' || node.tagName === 'OL') {
+                  // Handle lists
+                  const listItems = node.getElementsByTagName('li');
+                  for (let i = 0; i < listItems.length; i++) {
+                    checkPageOverflow(7);
+                    const bullet = node.tagName === 'UL' ? '• ' : `${i + 1}. `;
+                    
+                    // Add bullet/number
+                    applyFormatting(inheritedFormat);
+                    pdf.text(bullet, margin, yPos);
+                    
+                    // Process list item content
+                    const listItem = listItems[i];
+                    const bulletWidth = pdf.getTextWidth(bullet);
+                    const savedMargin = margin;
+                    margin += bulletWidth;
+                    
+                    // Process children of list item
+                    for (const child of listItem.childNodes) {
+                      await processNode(child, inheritedFormat);
+                    }
+                    
+                    margin = savedMargin;
+                    yPos += 1; // Minimal list item spacing
+                  }
+                } else if (node.tagName === 'BLOCKQUOTE') {
+                  // Handle blockquotes
+                  const savedMargin = margin;
+                  margin += 10;
+                  
+                  // Draw quote line
+                  pdf.setDrawColor(207, 0, 114);
+                  pdf.setLineWidth(0.5);
+                  const startY = yPos;
+                  
+                  // Process blockquote content
+                  const format = { ...inheritedFormat, italic: true };
+                  for (const child of node.childNodes) {
+                    await processNode(child, format);
+                  }
+                  
+                  // Draw the vertical line
+                  pdf.line(savedMargin + 5, startY, savedMargin + 5, yPos - 3);
+                  margin = savedMargin;
+                  yPos += 3; // Reduced spacing after blockquote
+                } else if (node.tagName === 'PRE' || node.tagName === 'CODE') {
+                  // Handle code blocks
+                  checkPageOverflow(10);
+                  const format = { ...inheritedFormat, fontSize: 9 };
+                  pdf.setFont('courier', 'normal');
+                  pdf.setFontSize(9);
+                  
+                  // Background for code
+                  pdf.setFillColor(245, 245, 245);
+                  const codeText = node.textContent;
+                  const codeLines = pdf.splitTextToSize(codeText, contentWidth - 10);
+                  const codeHeight = codeLines.length * 5 + 4;
+                  pdf.rect(margin, yPos - 2, contentWidth, codeHeight, 'F');
+                  
+                  // Add code text
+                  pdf.setTextColor(0, 0, 0);
+                  pdf.text(codeLines, margin + 5, yPos + 2);
+                  yPos += codeHeight + 3; // Reduced spacing after code
+                  
+                  // Reset formatting
+                  applyFormatting(inheritedFormat);
+                } else {
+                  // For other formatting elements, parse styles and process children
+                  const format = parseStyles(node);
+                  for (const child of node.childNodes) {
+                    await processNode(child, format);
+                  }
+                }
+              }
+            };
+            
+            // Process all top-level nodes
+            for (const node of tempDiv.childNodes) {
+              await processNode(node);
+            }
+          };
+          
+          await processRichContent(answerHTML);
+        }
+        
+        // Add image if exists
+        if (answer.fileInput && answer.fileInput.files.length > 0) {
+          yPos += 5;
+          checkPageOverflow(80);
+          
+          try {
+            const file = answer.fileInput.files[0];
+            const base64 = file.base64 || await toBase64(file);
+            
+            // Calculate image dimensions to fit width
+            const maxImgWidth = Math.min(contentWidth, 150);
+            pdf.addImage(base64, 'JPEG', margin, yPos, maxImgWidth, 0);
+            
+            // Get actual image height after adding
+            const imgProps = pdf.getImageProperties(base64);
+            const imgHeight = (imgProps.height * maxImgWidth) / imgProps.width;
+            yPos += imgHeight + 5;
+          } catch (e) {
+            console.error('Error adding image:', e);
+            pdf.setTextColor(255, 0, 0);
+            pdf.text('[Error loading image]', margin, yPos);
+            yPos += 7;
+          }
+        }
+        
+        // Add minimal spacing between questions
+        yPos += 4;
       }
     }
+    
+    // Helper to convert base64 to blob
+    const base64ToBlob = (base64) => {
+      const parts = base64.split(',');
+      const contentType = parts[0].match(/:(.*?);/)[1];
+      const raw = atob(parts[1]);
+      const rawLength = raw.length;
+      const uInt8Array = new Uint8Array(rawLength);
+      for (let i = 0; i < rawLength; ++i) {
+        uInt8Array[i] = raw.charCodeAt(i);
+      }
+      return new Blob([uInt8Array], { type: contentType });
+    };
+    
+    // Build metadata with full content
+    const metadata = {
+      generatedAt: new Date().toISOString(),
+      title: data.title,
+      student: studentInfo,
+      questionCount: answers.length,
+      questions: []
+    };
+    
+    // Keep track of attachments
+    const attachments = [];
+    let attachmentIndex = 0;
+    
+    // Process questions and extract images
+    let qaIndex = 0;
+    for (let i = 0; i < data.questions.length; i++) {
+      const item = data.questions[i];
+      if (item.type !== 'section') {
+        const answer = answers[qaIndex];
+        qaIndex++;
+        
+        const questionData = {
+          questionNumber: metadata.questions.length + 1,
+          questionText: item.question,  // Full question text
+          questionDescription: item.description || '',
+          answerText: answer.editor.getText(),  // Full answer text
+          attachments: []  // References to image attachments
+        };
+        
+        // Process embedded images in answer HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = answer.editor.root.innerHTML;
+        const images = tempDiv.getElementsByTagName('img');
+        
+        for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
+          const img = images[imgIdx];
+          if (img.src && img.src.startsWith('data:')) {
+            const attachmentName = `q${questionData.questionNumber}_embedded_${imgIdx + 1}.png`;
+            questionData.attachments.push({
+              type: 'embedded',
+              filename: attachmentName
+            });
+            
+            // Store image data for later attachment
+            attachments.push({
+              name: attachmentName,
+              data: img.src
+            });
+          }
+        }
+        
+        // Process uploaded image
+        if (answer.fileInput && answer.fileInput.files.length > 0) {
+          const file = answer.fileInput.files[0];
+          const base64 = file.base64 || await toBase64(file);
+          const attachmentName = `q${questionData.questionNumber}_uploaded.jpg`;
+          
+          questionData.attachments.push({
+            type: 'uploaded',
+            filename: attachmentName
+          });
+          
+          attachments.push({
+            name: attachmentName,
+            data: base64
+          });
+        }
+        
+        metadata.questions.push(questionData);
+      }
+    }
+    
+    // Store metadata in PDF properties
+    const metadataString = JSON.stringify(metadata);
+    
+    // Set basic PDF properties
+    pdf.setProperties({
+      title: data.title || 'Assignment Report',
+      subject: 'University of Twente Assignment',
+      author: studentInfo.name || 'Student',
+      keywords: metadataString,  // Full metadata without images
+      creator: 'UT Assignment Formatting Assistant'
+    });
+    
+    // Add images as PDF attachments (if jsPDF supports it)
+    try {
+      // Note: Standard jsPDF doesn't have built-in attachment support
+      // This would work with jsPDF plugins or we'd need to use the internal API
+      if (pdf.internal && pdf.internal.events) {
+        // Store attachments info in PDF structure
+        const attachmentsInfo = {
+          type: 'assignment_attachments',
+          count: attachments.length,
+          files: attachments.map(att => ({ name: att.name, size: att.data.length }))
+        };
+        
+        // Add as annotation on first page
+        pdf.setPage(1);
+        pdf.setFontSize(1);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(JSON.stringify(attachmentsInfo), 0, 0);
+      }
+    } catch (e) {
+      console.error('Error adding attachments info:', e);
+    }
+    
+    // Save the PDF
+    const filename = `${data.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${studentInfo.snumber || 'submission'}_${new Date().toISOString().split('T')[0]}.pdf`;
+    pdf.save(filename);
+    
+    // Clean up
+    document.body.removeChild(loadingDiv);
+    
+  } catch (error) {
+    console.error('PDF generation error:', error);
+    alert('Failed to generate PDF: ' + error.message);
+    if (document.body.contains(loadingDiv)) {
+      document.body.removeChild(loadingDiv);
+    }
   }
-  
-  // Close any remaining section
-  if (inSection && currentSectionContent) {
-    htmlContent += currentSectionContent + `</div>`;
-  }
-
-  pdfContent.innerHTML = htmlContent;
-
-  const canvas = await html2canvas(pdfContent, {
-    scale: 2,
-    logging: false,
-    useCORS: true,
-    allowTaint: true
-  });
-
-  const imgData = canvas.toDataURL('image/png');
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF('p', 'mm', 'a4');
-  
-  const imgWidth = 210;
-  const pageHeight = 297;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-  let heightLeft = imgHeight;
-  let position = 0;
-
-  pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-  heightLeft -= pageHeight;
-
-  while (heightLeft >= 0) {
-    position = heightLeft - imgHeight;
-    pdf.addPage();
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-  }
-  
-  // Add page numbers
-  const pageCount = pdf.internal.getNumberOfPages();
-  for(let i = 1; i <= pageCount; i++) {
-    pdf.setPage(i);
-    pdf.setFontSize(10);
-    pdf.setTextColor(150);
-    pdf.text(`Page ${i} of ${pageCount}`, pdf.internal.pageSize.getWidth() / 2, pageHeight - 10, { align: 'center' });
-  }
-
-  const filename = `${data.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${studentInfo.snumber || 'submission'}_${new Date().toISOString().split('T')[0]}.pdf`;
-  pdf.save(filename);
-
-  pdfContent.innerHTML = '';
 }
 
 // Modal Functions
@@ -1937,15 +2991,67 @@ function dataURLtoFile(dataurl, filename) {
 }
 
 function copyToClipboard(btn, text) {
-  navigator.clipboard.writeText(text).then(() => {
-    const originalText = btn.innerHTML;
-    btn.innerHTML = createIcon('check') + "Copied!";
-    btn.classList.add('copied');
-    setTimeout(() => {
-      btn.innerHTML = originalText;
-      btn.classList.remove('copied');
-    }, 2000);
-  });
+  // Try modern clipboard API first
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      showCopySuccess(btn);
+    }).catch(() => {
+      // Fallback to legacy method
+      fallbackCopyToClipboard(btn, text);
+    });
+  } else {
+    // Use fallback method
+    fallbackCopyToClipboard(btn, text);
+  }
+}
+
+function fallbackCopyToClipboard(btn, text) {
+  // Create temporary textarea
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-999999px';
+  textArea.style.top = '-999999px';
+  document.body.appendChild(textArea);
+  
+  try {
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    if (successful) {
+      showCopySuccess(btn);
+    } else {
+      showCopyError(btn);
+    }
+  } catch (err) {
+    console.error('Fallback copy failed:', err);
+    showCopyError(btn);
+  } finally {
+    document.body.removeChild(textArea);
+  }
+}
+
+function showCopySuccess(btn) {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = createIcon('check') + "Copied!";
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.innerHTML = originalText;
+    btn.classList.remove('copied');
+  }, 2000);
+}
+
+function showCopyError(btn) {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = createIcon('error') + "Copy Failed";
+  btn.style.backgroundColor = '#dc3545';
+  setTimeout(() => {
+    btn.innerHTML = originalText;
+    btn.style.backgroundColor = '';
+  }, 2000);
+  
+  // Show manual copy instructions
+  alert('Copy failed. Please manually select and copy the link from the text area above.');
 }
 
 // Import/Export Functions
@@ -2000,15 +3106,17 @@ function convertToYAML(obj, indent = 0) {
       } else if (typeof value === 'boolean' || typeof value === 'number') {
         yaml += `${spaces}${key}: ${value}\n`;
       } else if (typeof value === 'string') {
-        // Handle multiline strings
-        if (value.includes('\n')) {
+        // Handle HTML content, multiline strings, or strings with special characters
+        if (value.includes('\n') || value.includes('<') || value.includes('"') || value.includes("'") || value.includes(':')) {
           yaml += `${spaces}${key}: |\n`;
           value.split('\n').forEach(line => {
             yaml += `${spaces}  ${line}\n`;
           });
+        } else if (value === '') {
+          yaml += `${spaces}${key}: ""\n`;
         } else {
-          // Simple string - no quotes needed for clean output
-          yaml += `${spaces}${key}: ${value}\n`;
+          // Simple string - add quotes for safety with special characters
+          yaml += `${spaces}${key}: "${value.replace(/"/g, '\\"')}"\n`;
         }
       } else if (Array.isArray(value)) {
         if (value.length > 0) {
@@ -2036,24 +3144,34 @@ function convertToYAML(obj, indent = 0) {
 
 function collectFormData() {
   const container = document.getElementById('questions-container');
+  if (!container) {
+    alert("No questions container found. Please make sure you're in builder mode.");
+    return null;
+  }
+  
   const orderedQuestions = [...container.querySelectorAll('.question-card, .section-card')].map(block => {
     const q = questions.find(q => q.block === block);
+    if (!q) {
+      console.error('Question data not found for block:', block);
+      return null;
+    }
+    
     if (q.type === 'section') {
       return {
         type: 'section',
         title: q.input.value.trim(),
-        description: q.description.value.trim()
+        description: q.description.root ? q.description.root.innerHTML : ''
       };
     } else {
       return {
         type: 'question',
         question: q.input.value.trim(),
-        description: q.description.value.trim(),
+        description: q.description.root ? q.description.root.innerHTML : '',
         allowImage: q.imgCheck.checked,
         wordLimit: q.wordLimit.value ? parseInt(q.wordLimit.value) : null
       };
     }
-  }).filter(item => (item.type === 'section' ? item.title.length > 0 : item.question.length > 0));
+  }).filter(item => item && (item.type === 'section' ? item.title.length > 0 : item.question.length > 0));
 
   const hasQuestions = orderedQuestions.some(item => item.type === 'question');
   if (!hasQuestions) {
@@ -2062,12 +3180,12 @@ function collectFormData() {
   }
 
   return {
-    title: document.getElementById('assignment-title').value.trim() || 'Untitled Assignment',
-    instructions: document.getElementById('assignment-instructions').value.trim(),
+    title: document.getElementById('assignment-title')?.value.trim() || 'Untitled Assignment',
+    instructions: document.getElementById('assignment-instructions')?.value.trim() || '',
     studentFields: {
-      name: document.getElementById('field-name').checked,
-      snumber: document.getElementById('field-snumber').checked,
-      group: document.getElementById('field-group').checked
+      name: document.getElementById('field-name')?.checked || false,
+      snumber: document.getElementById('field-snumber')?.checked || false,
+      group: document.getElementById('field-group')?.checked || false
     },
     questions: orderedQuestions
   };
@@ -2138,16 +3256,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isBuilder) {
       createBuilder();
     } else if (exerciseData) {
+      console.log('Processing exercise data from URL...');
       const data = decodeFormData(exerciseData);
-      if (data && data.questions) {
+      console.log('Decoded data:', data ? 'success' : 'failed');
+      
+      if (data && data.questions && Array.isArray(data.questions)) {
         createFiller(data);
       } else {
+        console.error('Invalid assignment data structure:', data);
+        const errorDetails = !data ? 'Failed to decode URL data' : 
+                           !data.questions ? 'No questions found in assignment' :
+                           'Questions data is not in expected format';
+        
         document.getElementById("app").innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">${createIcon('error')}</div>
             <h2>Invalid Assignment Link</h2>
             <p style="color: var(--error);">The assignment link appears to be invalid or corrupted.</p>
-            <a href="?builder=true" class="btn btn-primary hover-lift" style="margin-top: 2rem;">${createIcon('builder')} Create New Assignment</a>
+            <p style="color: var(--text-muted); font-size: 0.875rem;">Error: ${errorDetails}</p>
+            <div style="margin-top: 1rem;">
+              <a href="?" class="btn btn-secondary" style="margin-right: 1rem;">Go to Home</a>
+              <a href="?builder=true" class="btn btn-primary hover-lift">${createIcon('builder')} Create New Assignment</a>
+            </div>
           </div>
         `;
       }

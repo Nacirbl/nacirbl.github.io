@@ -1,0 +1,11 @@
+# Required dependencies for PDF parser
+PyPDF2>=3.0.0
+
+# Recommended dependencies for better extraction
+pdfplumber>=0.9.0
+
+# Optional dependencies for validation
+jsonschema>=4.0.0
+
+# For advanced image processing (optional)
+Pillow>=9.0.0
