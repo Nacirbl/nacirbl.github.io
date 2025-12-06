@@ -2752,25 +2752,30 @@ async function generatePDF(data, answers, studentInfo) {
           attachments: []  // References to image attachments
         };
         
-        // Process embedded images in answer HTML
+        // Process ALL images in answer HTML (embedded base64 and external URLs)
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = answer.editor.root.innerHTML;
         const images = tempDiv.getElementsByTagName('img');
-        
+
         for (let imgIdx = 0; imgIdx < images.length; imgIdx++) {
           const img = images[imgIdx];
-          if (img.src && img.src.startsWith('data:')) {
-            const attachmentName = `q${questionData.questionNumber}_embedded_${imgIdx + 1}.png`;
+          if (img.src) {
+            const isEmbedded = img.src.startsWith('data:');
+            const attachmentName = `q${questionData.questionNumber}_img_${imgIdx + 1}`;
+
             questionData.attachments.push({
-              type: 'embedded',
-              filename: attachmentName
+              type: isEmbedded ? 'embedded' : 'external',
+              filename: attachmentName,
+              src: isEmbedded ? null : img.src  // Store URL for external images
             });
-            
-            // Store image data for later attachment
-            attachments.push({
-              name: attachmentName,
-              data: img.src
-            });
+
+            // Store image data for later attachment (only for embedded)
+            if (isEmbedded) {
+              attachments.push({
+                name: attachmentName + '.png',
+                data: img.src
+              });
+            }
           }
         }
         
@@ -3226,7 +3231,25 @@ function loadFormData(data) {
     
     const q = questions[questions.length - 1];
     q.input.value = item.type === 'section' ? item.title : item.question;
-    q.description.value = item.description || '';
+    
+    // Fix: Properly set Quill editor content instead of trying to set .value
+    if (item.description && item.description.trim() !== '') {
+      q.description.root.innerHTML = item.description;
+      
+      // Restore click handlers for images in the imported content
+      setTimeout(() => {
+        const images = q.description.root.querySelectorAll('img');
+        images.forEach(img => {
+          img.style.cursor = 'pointer';
+          img.onclick = () => showImageResizeModal(img, q.description);
+        });
+      }, 100);
+      
+      // Trigger Quill to update its internal state
+      q.description.update();
+    } else {
+      q.description.setText(''); // Clear the editor if no description
+    }
     
     if (item.type === 'question') {
       q.imgCheck.checked = item.allowImage || false;
